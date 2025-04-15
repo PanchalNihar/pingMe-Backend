@@ -4,6 +4,7 @@ const socketIO = require("socket.io");
 const cors = require("cors");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
+const chatRoutes=require("./routes/chatRoutes")
 require("dotenv").config();
 
 const app = express();
@@ -20,9 +21,9 @@ app.use(express.json());
 
 //routes
 app.use("/api/auth", authRoutes);
-
+app.use("/chat",chatRoutes)
 //socket setup
-// require("./socket/socketHandler")(io);
+require("./socket/socketHandler")(io);
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

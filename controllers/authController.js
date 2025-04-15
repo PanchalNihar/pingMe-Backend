@@ -53,8 +53,21 @@ async function loginUser(req, res) {
       .json({ message: "Error logging in user", error: err });
   }
 }
-
+async function getAllUsers(req, res) {
+  try {
+    const currentUserId = req.query.exclude;
+    const users = await User.find({ _id: { $ne: currentUserId } }).select(
+      "name _id"
+    );
+    res.json(users);
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ message: "Error fetching users", error: err });
+  }
+}
 module.exports = {
   registerNewuser,
   loginUser,
+  getAllUsers
 };
