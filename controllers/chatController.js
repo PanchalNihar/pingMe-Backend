@@ -14,3 +14,22 @@ exports.getChatMessages = async (req, res) => {
     res.status(500).json({ msg: "Error fetching messages" });
   }
 };
+
+exports.markMessagesAsRead = async (req, res) => {
+  const { sender, receiver } = req.body;
+  try {
+    await Message.updateMany(
+      {
+        sender,
+        receiver,
+        isRead: false,
+      },
+      {
+        $set: { isRead: true },
+      }
+    );
+    res.json({ msg: "Messages marked as read" });
+  } catch (err) {
+    res.status(500).json({ msg: "Error marking messages as read" });
+  }
+};
