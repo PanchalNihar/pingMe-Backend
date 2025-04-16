@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const Message = require("../models/message");
 
 exports.getChatMessages = async (req, res) => {
@@ -31,5 +32,28 @@ exports.markMessagesAsRead = async (req, res) => {
     res.json({ msg: "Messages marked as read" });
   } catch (err) {
     res.status(500).json({ msg: "Error marking messages as read" });
+  }
+};
+
+exports.getUnreadCounts = async (req, res) => {
+  const { userId } = req.query;
+  try {
+    const unread = await Message.aggregate([
+      {
+        $match: {
+          receiver: new mongoose.Types.ObjectId(userId),
+          isRead: false,
+        },
+      },
+      {
+        $group: {
+          _id: "$sender",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    res.json(unread);
+  } catch (err) {
+    res.status(500).json({ msg: "Error fetching unread counts" });
   }
 };
