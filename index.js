@@ -2,9 +2,10 @@ const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
 const cors = require("cors");
+const path=require("path")
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
-const chatRoutes=require("./routes/chatRoutes")
+const chatRoutes = require("./routes/chatRoutes");
 require("dotenv").config();
 
 const app = express();
@@ -18,10 +19,11 @@ const io = socketIO(server, {
 connectDB();
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 //routes
 app.use("/api/auth", authRoutes);
-app.use("/chat",chatRoutes)
+app.use("/chat", chatRoutes);
 //socket setup
 require("./socket/socketHandler")(io);
 

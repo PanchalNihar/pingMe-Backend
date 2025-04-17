@@ -66,8 +66,64 @@ async function getAllUsers(req, res) {
       .json({ message: "Error fetching users", error: err });
   }
 }
+
+async function getProfile(req, res) {
+  const userId = req.query.id;
+  try {
+    const user = await User.findById(userId).select("name email avatar");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json(user);
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ message: "Error fetching user profile", error: err });
+  }
+}
+
+// In authController.js - updateProfile function
+async function updateProfile(req, res) {
+  // Make sure user exists and matches authenticated user
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  
+  const { name, email } = req.body;
+  const id = req.user.id; // Use the ID from the token, not from the body
+  let avatar = req.body.avatar;
+  
+  if (req.file) {
+    avatar = `http://localhost:5000/uploads/${req.file.filename}`;
+  }
+  
+  try {
+    const updateUser = await User.findByIdAndUpdate(
+      id,
+      {
+        name: name || undefined,
+        email: email || undefined,
+        avatar: avatar || undefined,
+      },
+      { new: true }
+    ).select("name email avatar");
+    
+    if (!updateUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    res.json(updateUser);
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ message: "Error updating user profile", error: err.message });
+  }
+}
+
 module.exports = {
   registerNewuser,
   loginUser,
-  getAllUsers
+  getAllUsers,
+  getProfile,
+  updateProfile,
 };
