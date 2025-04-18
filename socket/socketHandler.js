@@ -33,7 +33,12 @@ module.exports = (io) => {
         console.error("💥 Error saving message:", error.message);
       }
     });
-
+    socket.on("typing", ({ roomId, sender }) => {
+      socket.to(roomId).emit("typing", sender);
+    });
+    socket.on("stop-typing", ({ roomId }) => {
+      socket.to(roomId).emit("stop-typing");
+    });
     socket.on("disconnect", () => {
       console.log("🔴 Client disconnected");
     });
