@@ -11,6 +11,14 @@ const messageSchema = new mongoose.Schema({
   },
   content: {
     type: String,
+    required: function() {
+      // Content is required only if there's no image
+      return !this.image || !this.image.data;
+    }
+  },
+  image: {
+    data: Buffer,
+    contentType: String,
   },
   isRead: {
     type: Boolean,
