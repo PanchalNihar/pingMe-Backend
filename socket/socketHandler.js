@@ -107,6 +107,35 @@ module.exports = (io) => {
         console.error("Error deleting message:", { messageId });
       }
     });
+    socket.on("edit-message", async ({ messageId, newContent, roomId }) => {
+      try {
+        const updateMessage = await Message.findByIdAndUpdate(
+          messageId,
+          {
+            content: newContent,
+          },
+          {
+            new: true,
+          }
+        );
+        if (updateMessage) {
+          const updated = updateMessage.toObject();
+          if (updated.image && updated.image.data) {
+            updated.image = {
+              data: Buffer.from(updateMessage.image.data).toString("base64"),
+              contentType: updated.image.contentType,
+            };
+          } else {
+            updated.image = undefined;
+          }
+          if (updated) {
+            io.to(roomId).emit("message-edited", updated);
+          }
+        }
+      } catch (err) {
+        console.error("Error editing message:", { messageId, newContent });
+      }
+    });
     socket.on("disconnect", () => {
       for (const [userId, socketId] of onlineUsers.entries()) {
         if (socketId === socket.id) {
