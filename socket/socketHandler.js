@@ -107,7 +107,7 @@ module.exports = (io) => {
         console.error("Error deleting message:", { messageId });
       }
     });
-    socket.on("edit-message", async ({ messageId, newContent, roomId }) => {
+    socket.on("edit-message", async ({ messageId, newContent, roomId }) => {o
       try {
         const updateMessage = await Message.findByIdAndUpdate(
           messageId,
