@@ -13,11 +13,22 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
+      required: function(){
+        return !this.isGoogleUser
+      },
     },
     avatar: {
       type: String,
     },
+    firebaseUid:{
+      type:String,
+      unique:true,
+      sparse:true
+    },
+    isGoogleUser:{
+      type:Boolean,
+      default:false
+    }
   },
   {
     timestamps: true,

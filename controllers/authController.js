@@ -1,6 +1,13 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
+const admin = require("firebase-admin");
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(require("../config/firebase-service-account.json")),
+  });
+}
 
 async function registerNewuser(req, res) {
   const { name, email, password } = req.body;
@@ -67,6 +74,53 @@ async function getAllUsers(req, res) {
   }
 }
 
+async function googleLogin(req, res) {
+  const { idToken, email, name, photoUrl } = req.body;
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const firebaseUid = decodedToken.uid;
+    let user = await User.findOne({
+      $or: [{ email: email }, { firebaseUid: firebaseUid }],
+    });
+    if (!user) {
+      user = await User.create({
+        name: name,
+        email: email,
+        firebaseUid: firebaseUid,
+        avatar: photoUrl,
+        isGoogleUser: true,
+      });
+    } else {
+      if (!user.firebaseUid) {
+        user.firebaseUid = firebaseUid;
+        user.isGoogleUser = true;
+        if (photoUrl && !user.avatar) {
+          user.avatar = photoUrl;
+        }
+        await user.save();
+      }
+    }
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+    res.status(200).json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+      },
+      token,
+    });
+  } catch (error) {
+    console.error("Google sign in error:", error);
+    return res.status(401).json({
+      message: "Invalid google token",
+      error: error.message,
+    });
+  }
+}
+
 async function getProfile(req, res) {
   const userId = req.query.id;
   try {
@@ -88,15 +142,15 @@ async function updateProfile(req, res) {
   if (!req.user || !req.user.id) {
     return res.status(401).json({ message: "Unauthorized" });
   }
-  
+
   const { name, email } = req.body;
   const id = req.user.id; // Use the ID from the token, not from the body
   let avatar = req.body.avatar;
-  
+
   if (req.file) {
     avatar = `http://localhost:5000/uploads/${req.file.filename}`;
   }
-  
+
   try {
     const updateUser = await User.findByIdAndUpdate(
       id,
@@ -107,11 +161,11 @@ async function updateProfile(req, res) {
       },
       { new: true }
     ).select("name email avatar");
-    
+
     if (!updateUser) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     res.json(updateUser);
   } catch (err) {
     return res
@@ -122,6 +176,7 @@ async function updateProfile(req, res) {
 
 module.exports = {
   registerNewuser,
+  googleLogin,
   loginUser,
   getAllUsers,
   getProfile,

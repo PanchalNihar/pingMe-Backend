@@ -1,10 +1,20 @@
 const mongoose = require("mongoose");
 const Message = require("../models/message");
+const User = require("../models/user");
 const CryptoJS = require("crypto-js");
+const jwt = require("jsonwebtoken");
+const admin = require("firebase-admin");
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(require("../config/firebase-service-account.json")),
+  });
+}
 
 const onlineUsers = new Map();
 
-// Helper functions for encryption/decryption instead of using model methods
+// Helper functions for encryption/decryption
 function encryptContent(content, secretKey) {
   return CryptoJS.AES.encrypt(content, secretKey).toString();
 }
@@ -19,23 +29,86 @@ function decryptContent(encryptedContent, secretKey) {
   }
 }
 
+// Authentication helper for socket connections
+async function authenticateSocket(token) {
+  if (!token) {
+    throw new Error("No token provided");
+  }
+
+  // First try JWT authentication
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      throw new Error("User not found");
+    }
+    return { id: user._id.toString(), user };
+  } catch (jwtError) {
+    // If JWT fails, try Firebase authentication
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const user = await User.findOne({ firebaseUid: decodedToken.uid });
+      if (!user) {
+        throw new Error("User not found");
+      }
+      return { id: user._id.toString(), user };
+    } catch (firebaseError) {
+      throw new Error("Invalid token");
+    }
+  }
+}
+
 module.exports = (io) => {
+  // Socket authentication middleware
+  io.use(async (socket, next) => {
+    try {
+      const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(" ")[1];
+      
+      if (!token) {
+        return next(new Error("Authentication error: No token provided"));
+      }
+
+      const authResult = await authenticateSocket(token);
+      socket.userId = authResult.id;
+      socket.user = authResult.user;
+      next();
+    } catch (error) {
+      console.error("Socket authentication error:", error.message);
+      next(new Error("Authentication error"));
+    }
+  });
+
   io.on("connection", (socket) => {
-    console.log("🟢 New Client connected");
+    console.log(`🟢 New Client connected: ${socket.user.name} (${socket.userId})`);
+    
+    // Automatically register the authenticated user
+    onlineUsers.set(socket.userId, socket.id);
+    io.emit("online-users", Array.from(onlineUsers.keys()));
     
     socket.on("register-users", (userId) => {
+      // Verify that the userId matches the authenticated user
+      if (userId !== socket.userId) {
+        console.warn(`⚠️ User ${socket.userId} tried to register as ${userId}`);
+        return;
+      }
       onlineUsers.set(userId, socket.id);
       io.emit("online-users", Array.from(onlineUsers.keys()));
     });
     
     socket.on("join-room", (roomId) => {
       socket.join(roomId);
-      console.log(`✅ Joined Room: ${roomId}`);
+      console.log(`✅ ${socket.user.name} joined Room: ${roomId}`);
     });
 
     socket.on("chat-message", async (data) => {
       console.log("Received message data:", data);
       const { sender, receiver, content, imageBase64, imageType } = data;
+
+      // Verify that the sender matches the authenticated user
+      if (sender !== socket.userId) {
+        console.warn(`⚠️ User ${socket.userId} tried to send message as ${sender}`);
+        return;
+      }
 
       // Validate required fields
       if (!sender || !receiver) {
@@ -50,6 +123,17 @@ module.exports = (io) => {
       }
 
       try {
+        // Verify that both sender and receiver exist
+        const [senderUser, receiverUser] = await Promise.all([
+          User.findById(sender),
+          User.findById(receiver)
+        ]);
+
+        if (!senderUser || !receiverUser) {
+          console.warn("⚠️ Invalid sender or receiver");
+          return;
+        }
+
         // Create base message document
         const messageData = {
           sender: new mongoose.Types.ObjectId(sender),
@@ -64,7 +148,6 @@ module.exports = (io) => {
         // Add and encrypt content if provided
         if (content && content.trim() !== "") {
           if (secretKey) {
-            // Use the standalone encryption function
             messageData.content = encryptContent(content.trim(), secretKey);
           } else {
             messageData.content = content.trim();
@@ -78,7 +161,6 @@ module.exports = (io) => {
             contentType: imageType || "image/jpeg",
           };
         } else {
-          // Explicitly set image to undefined to avoid any issues
           messageData.image = undefined;
         }
 
@@ -91,7 +173,7 @@ module.exports = (io) => {
 
         const message = await Message.create(messageData);
 
-        // Prepare message for sending - carefully handle the image conversion
+        // Prepare message for sending
         let messageToSend = message.toObject();
 
         // If we have encrypted content, decrypt it before sending
@@ -106,7 +188,6 @@ module.exports = (io) => {
             contentType: message.image.contentType,
           };
         } else {
-          // Make sure image is undefined/null in the response if not present
           messageToSend.image = undefined;
         }
 
@@ -125,6 +206,11 @@ module.exports = (io) => {
     });
 
     socket.on("typing", ({ roomId, sender }) => {
+      // Verify that the sender matches the authenticated user
+      if (sender !== socket.userId) {
+        console.warn(`⚠️ User ${socket.userId} tried to send typing indicator as ${sender}`);
+        return;
+      }
       socket.to(roomId).emit("typing", sender);
     });
     
@@ -134,17 +220,31 @@ module.exports = (io) => {
     
     socket.on("delete-message", async ({ messageId, roomId }) => {
       try {
+        // Verify that the user owns the message
+        const message = await Message.findById(messageId);
+        if (!message || message.sender.toString() !== socket.userId) {
+          console.warn(`⚠️ User ${socket.userId} tried to delete message they don't own`);
+          return;
+        }
+
         const deleted = await Message.findByIdAndDelete(messageId);
         if (deleted) {
           io.to(roomId).emit("message-deleted", { messageId });
         }
       } catch (err) {
-        console.error("Error deleting message:", { messageId });
+        console.error("Error deleting message:", { messageId, error: err.message });
       }
     });
     
     socket.on("edit-message", async ({ messageId, newContent, roomId }) => {
       try {
+        // Verify that the user owns the message
+        const message = await Message.findById(messageId);
+        if (!message || message.sender.toString() !== socket.userId) {
+          console.warn(`⚠️ User ${socket.userId} tried to edit message they don't own`);
+          return;
+        }
+
         const secretKey = process.env.MESSAGE_ENCRYPTION_KEY;
         let contentToSave = newContent;
         
@@ -180,46 +280,30 @@ module.exports = (io) => {
             updated.image = undefined;
           }
           
-          if (updated) {
-            io.to(roomId).emit("message-edited", updated);
-          }
+          io.to(roomId).emit("message-edited", updated);
         }
       } catch (err) {
-        console.error("Error editing message:", { messageId, newContent, error: err });
+        console.error("Error editing message:", { messageId, newContent, error: err.message });
       }
     });
     
     socket.on("disconnect", () => {
-      // Don't delete the user from onlineUsers immediately
-      // Just update their status or set a timer
-      
-      // Find the userId associated with this socket
-      let disconnectedUserId = null;
-      for (const [userId, socketId] of onlineUsers.entries()) {
-        if (socketId === socket.id) {
-          disconnectedUserId = userId;
-          // We don't delete immediately
-          // onlineUsers.delete(userId);
-          break;
-        }
-      }
+      // Find and remove the disconnected user
+      let disconnectedUserId = socket.userId;
       
       if (disconnectedUserId) {
         // Set a timeout to remove the user from online users after a delay
-        // This gives them time to refresh without appearing offline
         setTimeout(() => {
-          // Check if the user has reconnected with a different socket
           const currentSocketId = onlineUsers.get(disconnectedUserId);
           if (currentSocketId === socket.id) {
-            // If no new connection was made, remove them
             onlineUsers.delete(disconnectedUserId);
             io.emit("online-users", Array.from(onlineUsers.keys()));
-            console.log(`🔴 User ${disconnectedUserId} removed from online users after timeout`);
+            console.log(`🔴 User ${socket.user.name} (${disconnectedUserId}) removed from online users after timeout`);
           }
-        }, 5000); // 5 second delay - adjust as needed
+        }, 5000); // 5 second delay
       }
       
-      console.log("🔴 Client disconnected but waiting before removing from online users");
+      console.log(`🔴 Client disconnected: ${socket.user.name} (${socket.userId})`);
     });
   });
 };
