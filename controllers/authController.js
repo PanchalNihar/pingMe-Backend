@@ -34,25 +34,31 @@ async function loginUser(req, res) {
   try {
     const user = await User.findOne({ email });
     if (!user) {
+      console.log("❌ User not found");
       return res.status(400).json({ message: "Invalid email or password" });
     }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      console.log("❌ Password does not match");
       return res.status(400).json({ message: "Invalid email or password" });
     }
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
+
+    console.log("✅ Login successful");
     res.status(200).json({
       user: { id: user._id, name: user.name, email: user.email },
       token,
     });
   } catch (err) {
-    return res
-      .status(500)
-      .json({ message: "Error logging in user", error: err });
+    console.error("🔥 Error logging in:", err.message);
+    res.status(500).json({ message: "Error logging in user", error: err });
   }
 }
+
 async function getAllUsers(req, res) {
   try {
     const currentUserId = req.query.exclude;
