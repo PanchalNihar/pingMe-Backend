@@ -6,7 +6,7 @@ const path=require("path")
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const chatRoutes = require("./routes/chatRoutes");
-require("dotenv").config();
+require("dotenv").config({path: ".env.local"});
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +27,7 @@ app.use("/chat", chatRoutes);
 //socket setup
 require("./socket/socketHandler")(io);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
 server.listen(PORT, HOST, () => {

@@ -1,6 +1,6 @@
 # Node.js
 node_modules/
-.env
+.env.local
 
 # Logs
 logs
@@ -20,3 +20,7 @@ uploads/
 
 # Firebase
 firebase-service-account.json
+
+# Docker
+.env.docker
+.dockerignore
