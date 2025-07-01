@@ -9,16 +9,23 @@ services:
     volumes:
       - .:/app
       - ./uploads:/app/uploads
-    # depends_on:
-      # - mongo
+    networks:
+      - pingme-network
     command: npx nodemon index.js
     working_dir: /app
-  # mongo:
-  #   image: mongo:latest
-  #   container_name: pingme-mongo
-  #   ports:
-  #     - "27017:27017"
-  #   volumes:
-  #     - mongo_data:/data/db
+  frontend:
+    build:
+      context: ../FRONTEND/pingMe
+    container_name: pingme-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - backend
+    networks:
+      - pingme-network
 volumes:
   mongo_data:
+
+networks:
+  pingme-network:
+    driver: bridge

@@ -24,3 +24,6 @@ firebase-service-account.json
 # Docker
 .env.docker
 .dockerignore
+
+# Build
+makefile
