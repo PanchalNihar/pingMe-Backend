@@ -76,11 +76,18 @@ async function getAllUsers(req, res) {
 async function getProfile(req, res) {
   const userId = req.query.id;
   try {
-    const user = await User.findById(userId).select("name email avatar");
+    const user = await User.findById(userId).select("-password");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    res.json(user);
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    });
   } catch (err) {
     return res
       .status(500)
